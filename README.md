@@ -1,77 +1,93 @@
-# STM32 timing lab — jitter, drift and board-to-board synchronisation
+# stm32-timing-lab
 
 [![ci](https://github.com/srinath-kothakapu/stm32-timing-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/srinath-kothakapu/stm32-timing-lab/actions/workflows/ci.yml)
 
-Measures how accurately STM32 boards keep time: hardware timestamps of a reference signal via
-timer input capture, interrupt-latency measurement, and host-side analysis of period jitter,
-frequency offset (ppm), accumulated drift and Allan deviation. Two boards can be compared
-against a common reference, and results are cross-checked with an oscilloscope.
+I wanted to find out how good the clocks on STM32 Nucleo boards actually are: how much jitter
+there is on a timestamp, how far two boards drift apart, and how quickly the MCU reacts to an
+external edge. This project measures that.
 
-**Status:** firmware, analysis tools and tests are complete. **Measurements are pending** —
-see [docs/MEASUREMENT_PLAN.md](docs/MEASUREMENT_PLAN.md); results will go into
-[docs/REPORT.md](docs/REPORT.md).
-
-## How it works
+A reference signal goes into PA0. TIM2 timestamps every rising edge in hardware (input
+capture, 32 bit, 84 MHz), and the board streams the timestamps over the ST-LINK virtual COM
+port. A small Python tool records the stream and calculates period jitter, frequency offset in
+ppm, accumulated drift and the Allan deviation. With two boards connected to the same
+reference I can compare them directly, and an oscilloscope is used to check the interrupt
+latency that the firmware measures.
 
 ```mermaid
 flowchart LR
-    REF[Reference signal<br/>GPS PPS / generator / other board] -->|PA0| CAP
+    REF[Reference<br/>GPS PPS / generator / other board] -->|PA0| CAP
     subgraph MCU[STM32F4 Nucleo]
-        CAP[TIM2 input capture<br/>32-bit @ 84 MHz<br/>hardware-latched timestamp] -->|IRQ| ISR[ISR: seq, CCR1,<br/>latency = CNT - CCR1]
-        ISR --> RB[(lock-free<br/>ring buffer)]
-        RB --> ML[main loop:<br/>text protocol] --> UART[USART2 460800 Bd]
+        CAP[TIM2 input capture<br/>32-bit @ 84 MHz] -->|IRQ| ISR[ISR: seq, CCR1,<br/>latency = CNT - CCR1]
+        ISR --> RB[(ring buffer)]
+        RB --> ML[main loop] --> UART[USART2 460800 Bd]
         TIM3[TIM3 PWM 1 kHz] -->|PA6| OUT[reference out]
-        ISR -->|PA5| MARK[ISR marker<br/>for oscilloscope]
+        ISR -->|PA5| MARK[marker pin for the scope]
     end
-    UART -->|ST-LINK VCP| HOST[Python: capture → unwrap → cycle index →<br/>jitter, ppm, drift, TIE, ADEV → report]
+    UART -->|ST-LINK VCP| HOST[Python: capture, analyse, plot]
 ```
 
-Design decisions:
+## Some decisions and why
 
-- **Timestamps come from hardware, not software.** TIM2 latches the counter on the edge, so
-  interrupt latency and its jitter do not enter the measurement. Latency is still measured
-  (`CNT − CCR1` at ISR entry) and shown separately.
-- **Same 84 MHz timer clock on F411 and F446** (different PLL/bus dividers), so 1 tick = 11.905 ns
-  on both boards and results compare directly.
-- **Register-level firmware** (CMSIS only, no HAL): about 4 KB of flash, and every peripheral setting is visible in the code.
-- **Cycle indexing on the host** assigns each edge its reference-cycle number from elapsed time,
-  so dropped serial lines and glitch edges are detected and excluded instead of corrupting the
-  frequency estimate.
-- **Reference error cancels** when two boards capture the same reference at the same time:
-  the board-to-board offset is valid even with an imperfect reference.
+The timestamp is latched by the timer hardware on the edge, so interrupt latency does not end
+up in the measurement. I still measure the latency (`TIM2->CNT - CCR1` as the first thing in
+the ISR) because it is interesting on its own, and PA5 goes high while the ISR runs so I can
+compare it with the scope.
 
-## Repository layout
+The F411 runs at 84 MHz and the F446 at 168 MHz, but I set the bus dividers so that TIM2 gets
+84 MHz on both. One tick is 11.905 ns on either board, so the numbers can be compared directly.
+
+The firmware is written on registers with CMSIS only, no HAL. It is about 4 KB, and every
+peripheral setting is visible in `firmware/src`.
+
+On the PC side every edge gets a cycle number based on the time since the previous edge,
+not on the sequence number. If a line gets lost on the UART, or there is a glitch edge from
+ringing on the wire, it shows up as a gap or gets thrown out instead of messing up the ppm fit.
+
+When two boards capture the same reference at the same time, the error of the reference
+cancels out of the difference between them. So the board-to-board offset is valid even if
+the reference itself is not perfect.
+
+One thing I found while testing the analysis: if a board measures its own PA6 output, every
+period is exactly 84000 ticks and the jitter is zero. The reference and the counter come from
+the same clock. The quantisation noise (about tick/√6 ≈ 4.9 ns) only appears with a reference
+that is not synchronous to the timer.
+
+## Folders
 
 ```
-firmware/            STM32 firmware (CMake, arm-none-eabi-gcc)
-  src/               clock tree, TIM2 capture + ISR, TIM3 reference out, UART
-  src/common/        portable code: ring buffer, line protocol, calculations
-  test/              host unit tests for src/common (ASan/UBSan)
-host/                Python package `stm32timing`: capture, analyze, compare
-  tests/             pytest: analysis verified against synthetic data with known answers
-docs/                hardware/wiring, measurement plan, report
-data/                raw capture logs (*.log.gz)
-reports/             generated results (Markdown, JSON, plots)
+firmware/        STM32 firmware (CMake + arm-none-eabi-gcc)
+  src/           clock setup, TIM2 capture and ISR, TIM3 reference output, UART
+  src/common/    hardware independent parts: ring buffer, line protocol, calculations
+  test/          unit tests for src/common, built for the PC
+host/            Python package stm32timing (capture, analyze, compare)
+  tests/         pytest, checks the analysis on generated data with known values
+docs/            wiring and the measurement procedure
+data/            raw logs (.log.gz)
+reports/         generated results and plots
 ```
 
-## Build and flash
+## Building
 
-Requires CMake ≥ 3.20, Ninja and the Arm GNU toolchain (`arm-none-eabi-gcc`). The CMSIS headers
-and ST startup files are downloaded at configure time (pinned versions).
+You need CMake 3.20+, Ninja and the Arm GNU toolchain. The CMSIS headers and ST startup files
+are downloaded when CMake configures the project.
 
 ```
 cd firmware
-cmake --preset f411-hse        # or f411-hsi, f446-hse, f446-hsi
+cmake --preset f411-hse        # also f411-hsi, f446-hse, f446-hsi
 cmake --build --preset f411-hse
 ```
 
-Flash by copying `build/f411-hse/timing_f411re_hse.bin` onto the NUCLEO USB drive, or with
-STM32CubeProgrammer: `STM32_Programmer_CLI -c port=SWD -w build/f411-hse/timing_f411re_hse.elf -rst`.
+To flash, copy `build/f411-hse/timing_f411re_hse.bin` to the NUCLEO drive, or use
+STM32CubeProgrammer:
 
-Build options: `-DREF_HZ=1000` (reference output frequency), `-DCAPTURE_FILTER=0` (input filter).
-Streaming at 460800 Bd supports reference frequencies up to about 1.5 kHz.
+```
+STM32_Programmer_CLI -c port=SWD -w build/f411-hse/timing_f411re_hse.elf -rst
+```
 
-## Capture and analyse
+`-DREF_HZ=1000` sets the frequency on PA6 and `-DCAPTURE_FILTER=0` the input filter. At
+460800 baud the stream keeps up with about 1.5 kHz.
+
+## Recording and analysing
 
 ```
 pip install -e host
@@ -80,27 +96,22 @@ python -m stm32timing analyze data/e1_loopback_A.log
 python -m stm32timing compare data/e3_ref_hse_A.log data/e3_ref_hse_B.log --ref-hz 1000
 ```
 
-Example output line format from the board:
+What the board sends:
 
 ```
 H,1,uid=1A2B3C4D,target=F411RE,clk=HSE,ftim=84000000,ref=1000
-C,4711,3954816020,25,0      seq, capture ticks, ISR latency ticks, flags
+C,4711,3954816020,25,0      seq, capture ticks, ISR latency in ticks, flags
 S,seq=4712,drop=0,ovc=0
 ```
+
+The experiments and the wiring for each one are in [docs/MEASUREMENT_PLAN.md](docs/MEASUREMENT_PLAN.md)
+and [docs/HARDWARE.md](docs/HARDWARE.md).
 
 ## Tests
 
 ```
-pytest host/tests                                              # analysis (24 tests)
+pytest host/tests
 cmake -S firmware/test -B build/fwtest && cmake --build build/fwtest && ctest --test-dir build/fwtest
 ```
 
-CI runs both test suites and cross-compiles all four firmware configurations.
-
-## Results
-
-_Pending — see [docs/REPORT.md](docs/REPORT.md)._
-
-## Third-party files
-
-The CMSIS headers and startup files downloaded at build time are Apache-2.0 (ARM, STMicroelectronics).
+GitHub Actions runs both and builds all four firmware variants on every push.

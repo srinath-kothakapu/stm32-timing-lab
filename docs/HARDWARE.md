@@ -47,13 +47,13 @@ The firmware configures both targets so that TIM2 runs from an 84 MHz clock
 | TIM2 / TIM3 clock | 84 MHz | 84 MHz |
 | PLL input | 1 MHz (HSE 8 MHz / 8, or HSI 16 MHz / 16) | same |
 
-**HSE** — on the Nucleo-64 boards the STM32 has no crystal of its own by default. The 8 MHz
-HSE comes from the ST-LINK's MCO output (HSE bypass, solder bridges SB16 and SB50 closed —
+**HSE.** On the Nucleo-64 boards the STM32 has no crystal of its own by default. The 8 MHz
+HSE comes from the ST-LINK's MCO output (HSE bypass, solder bridges SB16 and SB50 closed,
 the factory default). So the "HSE" accuracy you measure is the accuracy of the
 **ST-LINK's 8 MHz crystal**. If HSE does not start, the firmware falls back to HSI and reports
 `clk=HSI_FALLBACK` in its header, so a wrong solder-bridge setup cannot silently pass as a crystal run.
 
-**HSI** — internal 16 MHz RC oscillator, factory-trimmed (datasheet: ±1 % at 25 °C). Build with the `*-hsi` preset.
+**HSI.** Internal 16 MHz RC oscillator, factory-trimmed (datasheet: ±1 % at 25 °C). Build with the `*-hsi` preset.
 
 ## Wiring per experiment
 

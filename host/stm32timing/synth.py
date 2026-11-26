@@ -1,7 +1,7 @@
-"""Synthetic capture logs with known properties - FOR TESTS ONLY.
+"""Generated capture logs with known jitter, offset and gaps, used by the tests.
 
-Nothing generated here is a measurement. It exists so the analysis code can be
-checked against inputs whose true jitter / offset / drift are known exactly.
+These are not measurements. They let the tests check that the analysis gets the
+right answer when the true values are known.
 """
 
 from __future__ import annotations
