@@ -101,6 +101,6 @@ CI runs both test suites and cross-compiles all four firmware configurations.
 
 _Pending — see [docs/REPORT.md](docs/REPORT.md)._
 
-## License
+## Third-party files
 
-MIT. Downloaded CMSIS files are Apache-2.0 (ARM, STMicroelectronics).
+The CMSIS headers and startup files downloaded at build time are Apache-2.0 (ARM, STMicroelectronics).
