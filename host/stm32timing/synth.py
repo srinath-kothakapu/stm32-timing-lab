@@ -22,14 +22,35 @@ def synth_lines(
     seed: int = 1,
     uid: str = "5EED0001",
     clk: str = "HSE",
+    target: str = "SYNTH",
+    wander_ppm: float = 0.0,
+    sync: bool = False,
 ) -> list[str]:
-    """Edge timestamps as a board running ``ppm`` fast would record them."""
+    """Edge timestamps as a board running ``ppm`` fast would record them.
+
+    wander_ppm: size of a random-walk frequency wander (ppm per sqrt(second)).
+    sync: reference derived from the board's own clock (loopback), periods exact.
+    """
     rng = np.random.default_rng(seed)
+    if sync:
+        nominal = int(round(ftim / ref_hz))
+        ticks = (np.arange(n, dtype=np.int64) * nominal + start_ticks + 1234) % (1 << 32)
+        lat = rng.integers(lat_ticks[0], lat_ticks[1] + 1, n)
+        lines = ["# synthetic=1", f"H,1,uid={uid},target={target},clk={clk},ftim={ftim},ref={int(ref_hz)}"]
+        lines += [f"C,{i},{int(ticks[i])},{lat[i]},0" for i in range(n)]
+        lines.append(f"S,seq={n},drop=0,ovc=0")
+        return lines
     true_s = np.arange(n) / ref_hz + rng.normal(0.0, jitter_ns * 1e-9, n)
-    ticks_f = true_s * ftim * (1.0 + ppm * 1e-6) + rng.uniform(0, 1)  # random phase vs the timer
+    rate = 1.0 + ppm * 1e-6
+    if wander_ppm:
+        dt = 1.0 / ref_hz
+        y = np.cumsum(rng.normal(0.0, wander_ppm * 1e-6 * np.sqrt(dt), n))  # fractional frequency
+        extra = np.concatenate(([0.0], np.cumsum(y[:-1]) * dt))  # integrated phase in seconds
+        true_s = true_s + extra
+    ticks_f = true_s * ftim * rate + rng.uniform(0, 1)  # random phase vs the timer
     ticks = (np.floor(ticks_f).astype(np.int64) + start_ticks) % (1 << 32)
     lat = rng.integers(lat_ticks[0], lat_ticks[1] + 1, n)
-    lines = [f"# synthetic=1", f"H,1,uid={uid},target=SYNTH,clk={clk},ftim={ftim},ref={int(ref_hz)}"]
+    lines = ["# synthetic=1", f"H,1,uid={uid},target={target},clk={clk},ftim={ftim},ref={int(ref_hz)}"]
     seq = 0
     for i in range(n):
         if i in glitch_at:

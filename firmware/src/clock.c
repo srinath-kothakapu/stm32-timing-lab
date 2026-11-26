@@ -51,6 +51,8 @@ clk_src_t clock_init(clk_src_t requested)
                (PLL_Q << RCC_PLLCFGR_PLLQ_Pos);
 #ifdef RCC_PLLCFGR_PLLR_Pos
     pllcfgr |= (2u << RCC_PLLCFGR_PLLR_Pos); /* keep PLLR at a legal value (F446) */
+#else
+    pllcfgr |= RCC->PLLCFGR & 0xF0000000u; /* bits 31:28 reserved on F411, keep reset value */
 #endif
     RCC->PLLCFGR = pllcfgr;
     RCC->CR |= RCC_CR_PLLON;

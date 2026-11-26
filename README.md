@@ -59,9 +59,11 @@ firmware/        STM32 firmware (CMake + arm-none-eabi-gcc)
   src/           clock setup, TIM2 capture and ISR, TIM3 reference output, UART
   src/common/    hardware independent parts: ring buffer, line protocol, calculations
   test/          unit tests for src/common, built for the PC
+  sim/           Renode test: boots the real firmware on an emulated STM32F4
 host/            Python package stm32timing (capture, analyze, compare)
   tests/         pytest, checks the analysis on generated data with known values
-docs/            wiring and the measurement procedure
+  examples/      script that generates the simulated example report
+docs/            wiring, measurement procedure, example report
 data/            raw logs (.log.gz)
 reports/         generated results and plots
 ```
@@ -107,6 +109,10 @@ S,seq=4712,drop=0,ovc=0
 The experiments and the wiring for each one are in [docs/MEASUREMENT_PLAN.md](docs/MEASUREMENT_PLAN.md)
 and [docs/HARDWARE.md](docs/HARDWARE.md).
 
+To see what the output looks like before connecting any hardware, there is an example report in
+[docs/example](docs/example/README.md). It is made from **simulated data** (`host/examples/make_demo.py`),
+so the numbers in it are not measurements.
+
 ## Tests
 
 ```
@@ -114,4 +120,15 @@ pytest host/tests
 cmake -S firmware/test -B build/fwtest && cmake --build build/fwtest && ctest --test-dir build/fwtest
 ```
 
-GitHub Actions runs both and builds all four firmware variants on every push.
+The firmware also runs in the [Renode](https://renode.io) emulator. `firmware/sim/firmware.robot` boots
+each of the four builds on an emulated STM32F4, waits for the header and status lines on USART2 and
+then reads back the TIM2, TIM3, GPIOA, USART2, NVIC and PLL registers to check they are set up as
+intended. This caught one bug: the F411 has reserved bits in `RCC_PLLCFGR` that must keep their
+reset value, and the first version wrote them as zero. Renode does not model input capture from a
+pin, and its timers run at a fixed rate, so the actual timing numbers still need real boards.
+
+```
+renode-test firmware/sim/firmware.robot      # after building the four presets
+```
+
+GitHub Actions runs all of this and builds the four firmware variants on every push.

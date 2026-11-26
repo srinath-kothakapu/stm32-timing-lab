@@ -21,8 +21,20 @@ def _fmt(x: float, nd: int = 2) -> str:
     return f"{x:.{nd}f}"
 
 
+_WATERMARK: str | None = None
+
+
+def set_watermark(text: str | None) -> None:
+    """Stamp every following plot with text (used for the simulated demo)."""
+    global _WATERMARK
+    _WATERMARK = text
+
+
 def _save(fig, path: Path) -> str:
     fig.tight_layout()
+    if _WATERMARK:
+        fig.text(0.5, 0.5, _WATERMARK, fontsize=34, color="grey", alpha=0.25,
+                 ha="center", va="center", rotation=20, transform=fig.transFigure)
     fig.savefig(path, dpi=120)
     plt.close(fig)
     return path.name
@@ -62,7 +74,7 @@ def plots(r: Result, out: Path) -> dict:
     ax.grid(alpha=0.3)
     files["tie"] = _save(fig, out / "tie.png")
 
-    if r.adev:
+    if r.adev and max(r.adev) > 0:
         fig, ax = plt.subplots(figsize=(5.5, 4))
         ax.loglog(r.adev_tau_s, r.adev, "o-", color="#6e3ba8")
         ax.set_xlabel("τ [s]")
@@ -102,7 +114,7 @@ def markdown(r: Result, files: dict, title: str | None = None) -> str:
         f"| Frequency offset vs reference | {r.ppm:+.3f} ppm (±{r.ppm_ci95:.2g}, 95 %) |",
         f"| Accumulated drift at end of run | {r.drift_total_us:+.2f} µs after {r.duration_s:.1f} s |",
         f"| TIE (offset removed), peak-to-peak | {_fmt(t.pk_pk, 1)} ns |",
-        f"| Allan deviation at τ = 1 s | {('%.2e' % r.adev_1s) if r.adev_1s else 'n/a'} |",
+        f"| Allan deviation at τ = 1 s | {('%.2e' % r.adev_1s) if r.adev_1s is not None else 'n/a'} |",
         f"| ISR latency mean / p99.9 / max | {_fmt(la.mean, 0)} / {_fmt(la.p999, 0)} / {_fmt(la.max, 0)} ns |",
         f"| ISR latency in ticks (min..max) | {r.latency_ticks.min:.0f} .. {r.latency_ticks.max:.0f} |",
         f"| Missing cycles / glitch edges / over-captures | {r.missing_cycles} / {r.glitch_edges} / {r.overcaptures} |",
@@ -168,7 +180,7 @@ def write_comparison(c: Comparison, out_dir: str | Path) -> Path:
         f"| Period jitter 1σ | {c.a.period_ns.std:.2f} ns | {c.b.period_ns.std:.2f} ns |",
         f"| ISR latency mean / max | {c.a.latency_ns.mean:.0f} / {c.a.latency_ns.max:.0f} ns | {c.b.latency_ns.mean:.0f} / {c.b.latency_ns.max:.0f} ns |",
         "",
-        f"**Offset A − B: {c.ppm_a_minus_b:+.3f} ppm (±{c.ppm_ci95:.3f}, 95 %)** - "
+        f"**Offset A − B: {c.ppm_a_minus_b:+.3f} ppm (±{c.ppm_ci95:.2g}, 95 %)** - "
         f"the two clocks separate by {abs(c.ppm_a_minus_b) * 3.6:.1f} ms per hour.",
         "",
         f"_{c.note}_",

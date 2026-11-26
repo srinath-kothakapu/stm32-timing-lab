@@ -45,3 +45,37 @@ jobs:
             firmware/build/${{ matrix.preset }}/*.elf
             firmware/build/${{ matrix.preset }}/*.bin
             firmware/build/${{ matrix.preset }}/*.hex
+
+  firmware-emulation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "13.3.Rel1"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get install -y ninja-build
+      - name: Build all firmware variants
+        working-directory: firmware
+        run: |
+          for p in f411-hse f411-hsi f446-hse f446-hsi; do
+            cmake --preset $p && cmake --build --preset $p
+          done
+      - name: Install Renode
+        run: |
+          mkdir -p ~/renode
+          curl -sSL https://github.com/renode/renode/releases/download/v1.17.1/renode-1.17.1.linux-portable.tar.gz \
+            | tar xz -C ~/renode --strip-components=1
+          pip install -r ~/renode/tests/requirements.txt
+      - name: Run firmware in Renode
+        run: ~/renode/renode-test firmware/sim/firmware.robot
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: renode-results
+          path: |
+            robot_output.xml
+            log.html
+            report.html
