@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    { "name": "f411-hse", "inherits": "base", "cacheVariables": { "TARGET_MCU": "F411RE", "CLOCK_SRC": "HSE" } },
+    { "name": "f411-hsi", "inherits": "base", "cacheVariables": { "TARGET_MCU": "F411RE", "CLOCK_SRC": "HSI" } },
+    { "name": "f446-hse", "inherits": "base", "cacheVariables": { "TARGET_MCU": "F446RE", "CLOCK_SRC": "HSE" } },
+    { "name": "f446-hsi", "inherits": "base", "cacheVariables": { "TARGET_MCU": "F446RE", "CLOCK_SRC": "HSI" } }
+  ],
+  "buildPresets": [
+    { "name": "f411-hse", "configurePreset": "f411-hse" },
+    { "name": "f411-hsi", "configurePreset": "f411-hsi" },
+    { "name": "f446-hse", "configurePreset": "f446-hse" },
+    { "name": "f446-hsi", "configurePreset": "f446-hsi" }
+  ]
+}

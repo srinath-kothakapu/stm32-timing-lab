@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e "host[dev]"
+      - run: pytest -q host/tests
+
+  firmware-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S firmware/test -B build/fwtest
+      - run: cmake --build build/fwtest
+      - run: ctest --test-dir build/fwtest --output-on-failure
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [f411-hse, f411-hsi, f446-hse, f446-hsi]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "13.3.Rel1"
+      - run: sudo apt-get install -y ninja-build
+      - run: cmake --preset ${{ matrix.preset }}
+        working-directory: firmware
+      - run: cmake --build --preset ${{ matrix.preset }}
+        working-directory: firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.preset }}
+          path: |
+            firmware/build/${{ matrix.preset }}/*.elf
+            firmware/build/${{ matrix.preset }}/*.bin
+            firmware/build/${{ matrix.preset }}/*.hex

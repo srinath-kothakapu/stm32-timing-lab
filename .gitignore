@@ -1,0 +1,10 @@
+firmware/build/
+firmware/third_party/
+build/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+# raw logs: commit the gzip-compressed version (data/*.log.gz)
+data/*.log
+*.log
